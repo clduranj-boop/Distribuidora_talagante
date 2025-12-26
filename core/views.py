@@ -5,7 +5,7 @@ from django.db.models import Sum, Count
 from os import link
 import socket
 from django.shortcuts import render, redirect, get_object_or_404
-from django.contrib.auth import authenticate, loging, logout
+from django.contrib.auth import authenticate, login, logout
 from django.contrib.auth.decorators import login_required, user_passes_test
 from django.contrib import messages
 from django.contrib.auth.models import User
