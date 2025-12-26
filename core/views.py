@@ -1,5 +1,6 @@
 ﻿import json
 import base64
+from django.db.models.functions import ExtractMonth, ExtractYear
 from os import link
 import socket
 from django.shortcuts import render, redirect, get_object_or_404
@@ -1384,10 +1385,10 @@ def gestion_estados(request):
         dias_ordenados = sorted(ventas_por_dia.keys(), reverse=True)[:30]
         ventas_diarias_agrupadas = [(dia, ventas_por_dia[dia]) for dia in dias_ordenados]
 
-        ventas_mensuales = todas_ordenes.extra({
-            'mes': "strftime('%%m', fecha)",
-            'año': "strftime('%%Y', fecha)"
-        }).values('mes', 'año').annotate(
+        ventas_mensuales = todas_ordenes.annotate(
+            mes=ExtractMonth('fecha'),
+            año=ExtractYear('fecha')
+        ).values('mes', 'año').annotate(
             total_ventas=Sum('total'),
             num_pedidos=Count('id')
         ).order_by('-año', '-mes')[:12]
@@ -1427,7 +1428,7 @@ def gestion_estados(request):
         import traceback
         error_detail = traceback.format_exc()
         return HttpResponse(
-            f"<pre><strong>Error en gestion_estados:</strong>\n{type(e).__name__}: {str(e)}\n\n{error_detail}</pre>",
+            f"<pre><strong>Error en     ion_estados:</strong>\n{type(e).__name__}: {str(e)}\n\n{error_detail}</pre>",
             status=500
         )
 
