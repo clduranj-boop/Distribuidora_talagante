@@ -34,7 +34,7 @@
         </div>
     </div>
 
-    <!-- Tabla -->
+    <!-- Tabla de pedidos pendientes -->
     <div class="card shadow">
         <div class="card-body p-0">
             <div class="table-responsive">
@@ -114,5 +114,101 @@
         </ul>
     </nav>
     {% endif %}
+
+    <!-- ==================== VENTAS DIARIAS DETALLADAS ==================== -->
+    <div class="mt-5">
+        <h2 class="h4 text-primary mb-4">
+            <i class="fas fa-chart-line me-2"></i> Ventas Diarias Detalladas (Últimos 30 días)
+        </h2>
+
+        {% for dia, ordenes_dia in ventas_diarias_agrupadas %}
+        <div class="card mb-4 shadow-sm border-start border-primary border-4">
+            <div class="card-header bg-light d-flex justify-content-between align-items-center">
+                <strong>{{ dia|date:"l d \d\e F \d\e Y" }}</strong>
+                <span class="badge bg-success fs-5">
+                    Total del día: ${{ ordenes_dia|sum_attribute:'total'|intcomma }}
+                </span>
+            </div>
+            <div class="card-body p-0">
+                <div class="table-responsive">
+                    <table class="table table-sm table-hover mb-0">
+                        <thead class="table-light">
+                            <tr>
+                                <th>#ID</th>
+                                <th>Hora</th>
+                                <th>Cliente</th>
+                                <th>Total</th>
+                                <th>Estado</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for o in ordenes_dia %}
+                            <tr>
+                                <td><strong>#{{ o.id }}</strong></td>
+                                <td>{{ o.fecha|date:"H:i" }}</td>
+                                <td>
+                                    {{ o.usuario.username }}<br>
+                                    <small class="text-muted">{{ o.usuario.perfil.nombre_completo }}</small>
+                                </td>
+                                <td class="text-success fw-bold">${{ o.total|intcomma }}</td>
+                                <td>
+                                    <span class="badge bg-{% if o.estado == 'CO' %}success{% elif o.estado == 'CA' %}danger{% else %}warning text-dark{% endif %}">
+                                        {{ o.get_estado_display }}
+                                    </span>
+                                </td>
+                            </tr>
+                            {% empty %}
+                            <tr>
+                                <td colspan="5" class="text-center text-muted py-3">No hay pedidos este día</td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+        {% empty %}
+        <div class="alert alert-info text-center py-4">
+            <i class="fas fa-info-circle me-2"></i> No hay ventas registradas en los últimos 30 días.
+        </div>
+        {% endfor %}
+    </div>
+
+    <!-- ==================== RESUMEN MENSUAL ==================== -->
+    <div class="mt-5 mb-5">
+        <h2 class="h4 text-primary mb-4">
+            <i class="fas fa-calendar-alt me-2"></i> Resumen Mensual (Últimos 12 meses)
+        </h2>
+        <div class="card shadow">
+            <div class="card-body p-0">
+                <div class="table-responsive">
+                    <table class="table table-hover mb-0">
+                        <thead class="table-dark">
+                            <tr>
+                                <th>Mes</th>
+                                <th>N° Pedidos</th>
+                                <th>Total Ventas</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for mes in ventas_mensuales %}
+                            <tr>
+                                <td><strong>{{ mes.nombre_mes }} {{ mes.año }}</strong></td>
+                                <td class="text-center">{{ mes.num_pedidos }}</td>
+                                <td class="text-success fw-bold text-end">${{ mes.total_ventas|intcomma }}</td>
+                            </tr>
+                            {% empty %}
+                            <tr>
+                                <td colspan="3" class="text-center text-muted py-4">
+                                    No hay datos de ventas mensuales disponibles.
+                                </td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </div>
 </div>
 {% endblock %}

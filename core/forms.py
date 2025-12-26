@@ -12,68 +12,69 @@ class ProductoForm(forms.ModelForm):
             'unidad_medida', 'tamano_paquete', 'producto_hijo',
             'fecha_vencimiento', 'imagen', 'activo'
         ]
-        widgets = {
-           'codigo_barras': forms.TextInput(attrs={'class': 'form-control', 'readonly': 'readonly'}),
-            'nombre': forms.TextInput(attrs={'class': 'form-control', 'placeholder': 'Nombre del producto'}),
-            'precio': forms.NumberInput(attrs={'class': 'form-control', 'min': '0', 'placeholder': 'Precio en pesos'}),
-            'categoria': forms.TextInput(attrs={'class': 'form-control', 'placeholder': 'Ej: Frutas, Bebidas...'}),
-            'stock': forms.NumberInput(attrs={'class': 'form-control', 'step': '0.001', 'min': '0'}),
-            'unidad_medida': forms.Select(attrs={'class': 'form-select'}),
-            'tamano_paquete': forms.NumberInput(attrs={'class': 'form-control', 'step': '0.001', 'min': '1'}),
-            'producto_hijo': forms.Select(attrs={'class': 'form-select'}),
-            'fecha_vencimiento': forms.DateInput(attrs={'type': 'date', 'class': 'form-control'}),
-            'imagen': forms.FileInput(attrs={'class': 'form-control'}),
-            'activo': forms.CheckboxInput(attrs={'class': 'form-check-input'}),
-        }
-        labels = {
-            'precio': 'Precio (CLP)',
-            'tamano_paquete': 'Tamaño del paquete (ej: 12 unid por caja)',
-            'producto_hijo': 'Producto contenido (opcional)',
-        }
+        widgets = { ... }  # tu código actual
+
+        labels = { ... }  # tu código actual
 
     def __init__(self, *args, **kwargs):
-            super().__init__(*args, **kwargs)
-            
-            # Solo al CREAR (no al editar)
-            if not self.instance.pk:
-                self.fields['codigo_barras'].required = False
-                self.fields['codigo_barras'].help_text = "Se generará automáticamente (ej: MAN-00123)"
-                self.fields['codigo_barras'].widget.attrs['placeholder'] = "Dejar vacío para autogenerar"
-
-            # Al editar → readonly
-            else:
-                self.fields['codigo_barras'].widget.attrs['readonly'] = True
-
-    def clean_codigo_barras(self):
-        codigo = self.cleaned_data.get('codigo_barras')
-        instance = getattr(self, 'instance', None)
+        super().__init__(*args, **kwargs)
         
-        # Si estamos CREANDO y el campo está vacío → generamos uno
-        if not instance.pk and not codigo:
-            # Generamos código tipo MAN-00001, MAN-00002...
-            ultimo = Producto.objects.filter(
-                codigo_barras__regex=r'^MAN-\d+$'
-            ).order_by('-codigo_barras').first()
-            
-            if ultimo:
-                num = int(ultimo.codigo_barras.split('-')[1]) + 1
-            else:
-                num = 1
-            return f"MAN-{num:05d}"  # MAN-00001, MAN-00002...
-        
-        return codigo
+        if not self.instance.pk:
+            self.fields['codigo_barras'].required = False
+            self.fields['codigo_barras'].help_text = "Se generará automáticamente (ej: MAN-00123)"
+            self.fields['codigo_barras'].widget.attrs['placeholder'] = "Dejar vacío para autogenerar"
+        else:
+            self.fields['codigo_barras'].widget.attrs['readonly'] = True 
 
+        # Forzar precio entero en edición
+        if self.instance.pk and self.instance.precio:
+            self.initial['precio'] = int(self.instance.precio)
+        
+        self.fields['precio'].widget.attrs.update({
+            'step': '1',
+            'min': '0',
+            'class': 'form-control text-end',
+            'placeholder': '15000'
+        })
+
+    # === MÉTODOS CLEAN ===
     def clean_precio(self):
-        precio = self.cleaned_data['precio']
-        if precio < 0:
-            raise forms.ValidationError("El precio no puede ser negativo.")
+        precio = self.cleaned_data.get('precio')
+        if precio is not None:
+            try:
+                precio_entero = int(float(precio))
+                if precio_entero < 0:
+                    raise forms.ValidationError("El precio no puede ser negativo.")
+                return precio_entero
+            except (ValueError, TypeError):
+                raise forms.ValidationError("Ingresa un precio válido (solo números enteros).")
         return precio
 
     def clean_stock(self):
-        stock = self.cleaned_data['stock']
-        if stock < 0:
-            raise forms.ValidationError("El stock no puede ser negativo.")
+        stock = self.cleaned_data.get('stock')
+        if stock is not None:
+            try:
+                from decimal import Decimal, InvalidOperation
+                stock_decimal = Decimal(str(stock)).quantize(Decimal('0.001'))
+                if stock_decimal < 0:
+                    raise forms.ValidationError("El stock no puede ser negativo.")
+                return stock_decimal
+            except (InvalidOperation, ValueError, TypeError):
+                raise forms.ValidationError("Ingresa un stock válido (ej: 10 o 10.500).")
         return stock
+
+    def clean_tamano_paquete(self):
+        tamano = self.cleaned_data.get('tamano_paquete')
+        if tamano is not None:
+            try:
+                from decimal import Decimal, InvalidOperation
+                tamano_decimal = Decimal(str(tamano)).quantize(Decimal('0.001'))
+                if tamano_decimal <= 0:
+                    raise forms.ValidationError("El tamaño del paquete debe ser mayor a 0.")
+                return tamano_decimal
+            except (InvalidOperation, ValueError, TypeError):
+                raise forms.ValidationError("Ingresa un valor válido (ej: 12 o 12.000).")
+        return tamano
     
     
 

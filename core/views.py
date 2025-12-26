@@ -936,12 +936,15 @@ def actualizar_cantidad_carrito(request, item_id):
     
     return redirect('carrito')
 
+
+from django.db.models import Sum, Count
+
 @login_required
 @user_passes_test(is_superuser)
 def gestion_pedidos(request):
     estado_filtro = request.GET.get('estado', '')
 
-    # TODAS las órdenes que necesitan atención
+    # Órdenes pendientes para la tabla principal
     qs = Orden.objects.select_related('usuario', 'usuario__perfil') \
         .prefetch_related('itemorden_set__producto') \
         .order_by('-fecha')
@@ -949,16 +952,52 @@ def gestion_pedidos(request):
     if estado_filtro and estado_filtro in dict(Orden.ESTADOS):
         qs = qs.filter(estado=estado_filtro)
     else:
-        # Excluir solo canceladas y completadas
         qs = qs.exclude(estado__in=['cancelado', 'completado'])
 
     paginator = Paginator(qs, 25)
     page = request.GET.get('page')
     ordenes = paginator.get_page(page)
 
+    # === NUEVO: VENTAS DIARIAS DETALLADAS (últimos 30 días) ===
+    todas_ordenes = Orden.objects.all().order_by('-fecha')
+
+    ventas_por_dia = {}
+    for orden in todas_ordenes:
+        dia = orden.fecha.date()
+        if dia not in ventas_por_dia:
+            ventas_por_dia[dia] = []
+        ventas_por_dia[dia].append(orden)
+
+    # Ordenar días y limitar a últimos 30
+    dias_ordenados = sorted(ventas_por_dia.keys(), reverse=True)
+    if len(dias_ordenados) > 30:
+        dias_ordenados = dias_ordenados[:30]
+
+    ventas_diarias_agrupadas = [(dia, ventas_por_dia[dia]) for dia in dias_ordenados]
+
+    # === NUEVO: RESUMEN MENSUAL (últimos 12 meses) ===
+    ventas_mensuales = todas_ordenes.extra({
+        'mes': "strftime('%%m', fecha)",
+        'año': "strftime('%%Y', fecha)"
+    }).values('mes', 'año').annotate(
+        total_ventas=Sum('total'),
+        num_pedidos=Count('id')
+    ).order_by('-año', '-mes')[:12]
+
+    # Formatear nombre del mes (opcional, para que se vea bonito)
+    meses_nombres = {
+        '01': 'Enero', '02': 'Febrero', '03': 'Marzo', '04': 'Abril',
+        '05': 'Mayo', '06': 'Junio', '07': 'Julio', '08': 'Agosto',
+        '09': 'Septiembre', '10': 'Octubre', '11': 'Noviembre', '12': 'Diciembre'
+    }
+    for item in ventas_mensuales:
+        item['nombre_mes'] = meses_nombres.get(item['mes'], item['mes'])
+
     context = {
         'ordenes': ordenes,
         'estado_filtro': estado_filtro,
+        'ventas_diarias_agrupadas': ventas_diarias_agrupadas,  # Para el detalle por día
+        'ventas_mensuales': ventas_mensuales,                 # Para el resumen mensual
     }
     return render(request, 'core/gestion_pedidos.html', context)
 
@@ -1469,8 +1508,7 @@ def escaneo_rapido(request):
             })
 
         except Producto.DoesNotExist:
-            # PRODUCTO NUEVO  ir a crear con código ya puesto
-            return redirect(f"{reverse('producto_create')}?codigo_barras={codigo}")   
+            return redirect(f"{reverse('producto_create')}?codigo_barras={codigo}") 
 
     return render(request, 'core/escaneo_rapido.html')
 
