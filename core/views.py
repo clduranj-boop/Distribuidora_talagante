@@ -1315,7 +1315,7 @@ def gestion_estados(request):
     busqueda = request.GET.get('q', '').strip()
     estado_filtro = request.GET.get('estado', '')
 
-    # 1. Órdenes para la tabla principal
+    # Órdenes para la tabla principal - agregamos direccion_envio al select_related
     ordenes = Orden.objects.select_related('usuario', 'usuario__perfil', 'direccion_envio') \
                            .prefetch_related('itemorden_set__producto') \
                            .order_by('-fecha')
@@ -1331,7 +1331,7 @@ def gestion_estados(request):
     if estado_filtro:
         ordenes = ordenes.filter(estado=estado_filtro)
 
-    # 2. Cambio de estado (POST)
+    # Cambio de estado
     if request.method == 'POST':
         orden_id = request.POST.get('orden_id')
         nuevo_estado = request.POST.get('estado')
@@ -1341,11 +1341,9 @@ def gestion_estados(request):
             orden.estado = nuevo_estado
             orden.save()
 
-            # WhatsApp link
             mensaje_wa = f"Hola! Mi pedido es el #{orden.id} - Estado: {orden.get_estado_display()}"
             whatsapp_link = f"https://wa.me/56949071013?text={urllib.parse.quote(mensaje_wa)}"
 
-            # Correo al cliente
             if orden.usuario.email:
                 try:
                     html_email = render_to_string('emails/cambio_estado.html', {
@@ -1373,12 +1371,12 @@ def gestion_estados(request):
             print(f"ERROR CAMBIO ESTADO: {e}")
             return JsonResponse({'success': False})
 
-    # 3. Paginación
+    # Paginación
     paginator = Paginator(ordenes, 20)
     page_number = request.GET.get('page')
     page_obj = paginator.get_page(page_number)
 
-    # 4. VENTAS DIARIAS DETALLADAS (últimos 30 días)
+    # Ventas diarias y mensuales (siempre calculamos)
     todas_ordenes = Orden.objects.all().order_by('-fecha')
     ventas_por_dia = {}
     for orden in todas_ordenes:
@@ -1388,7 +1386,6 @@ def gestion_estados(request):
     dias_ordenados = sorted(ventas_por_dia.keys(), reverse=True)[:30]
     ventas_diarias_agrupadas = [(dia, ventas_por_dia[dia]) for dia in dias_ordenados]
 
-    # 5. RESUMEN MENSUAL (últimos 12 meses)
     ventas_mensuales = todas_ordenes.extra({
         'mes': "strftime('%%m', fecha)",
         'año': "strftime('%%Y', fecha)"
@@ -1405,65 +1402,79 @@ def gestion_estados(request):
     for item in ventas_mensuales:
         item['nombre_mes'] = meses_nombres.get(item['mes'], item['mes'])
 
-    # 6. EXPORTAR A EXCEL
+    # Exportar a Excel (protegido contra errores)
     if request.GET.get('export') == 'excel':
-        wb = Workbook()
-        ws = wb.active
-        ws.title = "Reporte Ventas"
+        try:
+            from openpyxl import Workbook
+            from openpyxl.styles import Font, Alignment, PatternFill
+            from openpyxl.utils import get_column_letter
 
-        header_font = Font(bold=True, color="FFFFFF")
-        header_fill = PatternFill(start_color="748C28", end_color="748C28", fill_type="solid")
-        title_font = Font(size=16, bold=True)
-        align_center = Alignment(horizontal="center")
+            wb = Workbook()
+            ws = wb.active
+            ws.title = "Reporte Ventas"
 
-        ws['A1'] = "REPORTE DE VENTAS - DISTRIBUIDORA TALAGANTE"
-        ws.merge_cells('A1:E1')
-        ws['A1'].font = title_font
-        ws['A1'].alignment = align_center
+            header_font = Font(bold=True, color="FFFFFF")
+            header_fill = PatternFill(start_color="748C28", end_color="748C28", fill_type="solid")
+            title_font = Font(size=16, bold=True)
+            align_center = Alignment(horizontal="center")
 
-        row = 3
-        ws.cell(row=row, column=1, value="Ventas Diarias (Últimos 30 días)").font = Font(bold=True, size=14)
-        row += 2
+            ws['A1'] = "REPORTE DE VENTAS - DISTRIBUIDORA TALAGANTE"
+            ws.merge_cells('A1:E1')
+            ws['A1'].font = title_font
+            ws['A1'].alignment = align_center
 
-        headers = ["Fecha", "ID Pedido", "Cliente", "Total", "Estado"]
-        for col, h in enumerate(headers, 1):
-            cell = ws.cell(row=row, column=col, value=h)
-            cell.font = header_font
-            cell.fill = header_fill
-            cell.alignment = align_center
-
-        row += 1
-        for dia, ordenes_dia in ventas_diarias_agrupadas:
-            total_dia = sum(o.total for o in ordenes_dia)
-            ws.cell(row=row, column=1, value=dia.strftime("%d/%m/%Y")).font = Font(bold=True)
-            row += 1
-            for o in ordenes_dia:
-                ws.append(["", f"#{o.id}", o.usuario.username, o.total, o.get_estado_display()])
-            ws.cell(row=row, column=3, value="Total del día:").font = Font(bold=True)
-            ws.cell(row=row, column=4, value=total_dia).font = Font(bold=True, color="008000")
+            row = 3
+            ws.cell(row=row, column=1, value="Ventas Diarias (Últimos 30 días)").font = Font(bold=True, size=14)
             row += 2
 
-        row += 2
-        ws.cell(row=row, column=1, value="Resumen Mensual").font = Font(bold=True, size=14)
-        row += 2
+            headers = ["Fecha", "ID Pedido", "Cliente", "Total", "Estado"]
+            for col, h in enumerate(headers, 1):
+                cell = ws.cell(row=row, column=col, value=h)
+                cell.font = header_font
+                cell.fill = header_fill
+                cell.alignment = align_center
 
-        headers_mes = ["Mes", "N° Pedidos", "Total Ventas"]
-        for col, h in enumerate(headers_mes, 1):
-            cell = ws.cell(row=row, column=col, value=h)
-            cell.font = header_font
-            cell.fill = header_fill
+            row += 1
+            for dia, ordenes_dia in ventas_diarias_agrupadas:
+                total_dia = sum(o.total for o in ordenes_dia)
+                ws.cell(row=row, column=1, value=dia.strftime("%d/%m/%Y")).font = Font(bold=True)
+                row += 1
+                for o in ordenes_dia:
+                    cliente = o.usuario.username
+                    if hasattr(o.usuario, 'perfil') and o.usuario.perfil:
+                        cliente = o.usuario.perfil.nombre_completo() or cliente
+                    ws.append(["", f"#{o.id}", cliente, float(o.total), o.get_estado_display()])
+                ws.cell(row=row, column=3, value="Total del día:").font = Font(bold=True)
+                ws.cell(row=row, column=4, value=float(total_dia)).font = Font(bold=True, color="008000")
+                row += 2
 
-        row += 1
-        for mes in ventas_mensuales:
-            ws.append([f"{mes['nombre_mes']} {mes['año']}", mes['num_pedidos'], mes['total_ventas']])
+            row += 2
+            ws.cell(row=row, column=1, value="Resumen Mensual").font = Font(bold=True, size=14)
+            row += 2
 
-        for col in range(1, 6):
-            ws.column_dimensions[get_column_letter(col)].width = 22
+            headers_mes = ["Mes", "N° Pedidos", "Total Ventas"]
+            for col, h in enumerate(headers_mes, 1):
+                cell = ws.cell(row=row, column=col, value=h)
+                cell.font = header_font
+                cell.fill = header_fill
 
-        response = HttpResponse(content_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
-        response['Content-Disposition'] = 'attachment; filename=reporte_ventas_distribuidora_talagante.xlsx'
-        wb.save(response)
-        return response
+            row += 1
+            for mes in ventas_mensuales:
+                ws.append([f"{mes['nombre_mes']} {mes['año']}", mes['num_pedidos'], float(mes['total_ventas'] or 0)])
+
+            for col in range(1, 6):
+                ws.column_dimensions[get_column_letter(col)].width = 22
+
+            response = HttpResponse(content_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
+            response['Content-Disposition'] = 'attachment; filename=reporte_ventas.xlsx'
+            wb.save(response)
+            return response
+
+        except Exception as e:
+            # Si falla el export, mostramos página normal con mensaje
+            print(f"ERROR EXPORT EXCEL: {e}")
+            messages.error(request, "Error al generar Excel. Intenta de nuevo más tarde.")
+            # Continuamos con la vista normal
 
     context = {
         'ordenes': page_obj,
@@ -1563,43 +1574,47 @@ def api_buscar_por_codigo(request):
 @login_required
 @user_passes_test(lambda u: u.is_superuser)
 def escaneo_rapido(request):
-    if request.method == "POST":
-        codigo = request.POST.get("codigo_barras", "").strip()
-        accion = request.POST.get("accion")  # 'sumar', 'restar', o None
+    try:
+        if request.method == "POST":
+            codigo = request.POST.get("codigo_barras", "").strip()
+            accion = request.POST.get("accion")
 
-        if not codigo:
-            messages.error(request, "No se recibió código de barras")
-            return redirect('escaneo_rapido')
-
-        # 1. BUSCAR SI EL PRODUCTO YA EXISTE
-        try:
-            producto = Producto.objects.get(codigo_barras=codigo)
-            
-            if accion == "confirmar":
-                try:
-                    cantidad = Decimal(request.POST.get("cantidad", "0"))
-                    if cantidad == 0:
-                        messages.warning(request, "Ingresa una cantidad válida")
-                    elif cantidad > 0:
-                        producto.agregar_stock(cantidad)
-                        messages.success(request, f"Stock sumado: +{cantidad} → {producto.stock} {producto.unidad_medida}")
-                    else:
-                        producto.restar_stock(abs(cantidad))
-                        messages.success(request, f"Stock restado: -{abs(cantidad)} → {producto.stock} {producto.unidad_medida}")
-                except Exception as e:
-                    messages.error(request, f"Error: {e}")
+            if not codigo:
+                messages.error(request, "No se recibió código de barras")
                 return redirect('escaneo_rapido')
 
-            # Mostrar pantalla de sumar/restar
-            return render(request, 'core/escaneo_existente.html', {
-                'producto': producto,
-                'codigo': codigo
-            })
+            try:
+                producto = Producto.objects.get(codigo_barras=codigo)
+                
+                if accion == "confirmar":
+                    try:
+                        cantidad = Decimal(request.POST.get("cantidad", "0"))
+                        if cantidad == 0:
+                            messages.warning(request, "Ingresa una cantidad válida")
+                        elif cantidad > 0:
+                            producto.agregar_stock(cantidad)
+                            messages.success(request, f"Stock sumado: +{cantidad} → {producto.stock} {producto.unidad_medida}")
+                        else:
+                            producto.restar_stock(abs(cantidad))
+                            messages.success(request, f"Stock restado: -{abs(cantidad)} → {producto.stock} {producto.unidad_medida}")
+                    except Exception as e:
+                        messages.error(request, f"Error al actualizar stock: {e}")
+                    return redirect('escaneo_rapido')
 
-        except Producto.DoesNotExist:
-            return redirect(f"{reverse('producto_create')}?codigo_barras={codigo}") 
+                return render(request, 'core/escaneo_existente.html', {
+                    'producto': producto,
+                    'codigo': codigo
+                })
 
-    return render(request, 'core/escaneo_rapido.html')
+            except Producto.DoesNotExist:
+                return redirect(f"{reverse('producto_create')}?codigo_barras={codigo}")
+
+        # GET normal
+        return render(request, 'core/escaneo_rapido.html')
+
+    except Exception as e:
+        # Esto nos muestra el error real en producción
+        return HttpResponse(f"<pre>Error en escaneo_rapido: {type(e).__name__}: {str(e)}</pre>", status=500)
 
 
 @staff_member_required
