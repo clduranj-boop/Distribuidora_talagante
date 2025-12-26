@@ -35,9 +35,10 @@ urlpatterns = [
     path('orden-exitosa/<int:orden_id>/', views.orden_exitosa, name='orden_exitosa'),
     path('escaneo/', views.escaneo_rapido, name='escaneo_rapido'),
     path('escaneo/editar/<int:pk>/', views.escaneo_rapido, name='editar_precio_rapido'),
-    path('gestion-pedidos/', views.gestion_pedidos, name='gestion_pedidos'),
-    path('panel/cambiar-estado/<int:pk>/', views.cambiar_estado_pedido, name='cambiar_estado_pedido'),
+    path('gestion-pedidos/', views.gestion_estados, name='gestion_pedidos'),  # redirecciona vieja URL a nueva view
     path('gestion-estados/', views.gestion_estados, name='gestion_estados'),
+    path('panel/cambiar-estado/<int:pk>/', views.cambiar_estado_pedido, name='cambiar_estado_pedido'),
+    
     path('pedidos-finalizados/', views.pedidos_finalizados, name='pedidos_finalizados'),
     path('pedidos-despacho/', views.pedidos_despacho, name='pedidos_despacho'),
     path('test-correo/', views.test_correo),
