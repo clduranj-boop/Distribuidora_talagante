@@ -1,39 +1,25 @@
-import os
+﻿import os
 from pathlib import Path
 from django.contrib.messages import constants as messages
+
 import dj_database_url
 
-# Build paths
+# Build paths inside the project like this: BASE_DIR / 'subdir'.
 BASE_DIR = Path(__file__).resolve().parent.parent
+
 LOGIN_URL = '/login/'
 
-# =============================================================================
-# SEGURIDAD Y ENTORNO (lo más importante para Render)
-# =============================================================================
-SECRET_KEY = os.environ.get('SECRET_KEY', 'django-insecure-bzo3^)g+tn*e1wgnoe=bc4gn0i=0y9%lty(4%=xqyqwd_1-&3)')
+# SECURITY WARNING: keep the secret key used in production secret!
+SECRET_KEY = 'django-insecure-bzo3^)g+tn*e1wgnoe=bc4gn0i=0y9%lty(4%=xqyqwd_1-&3)'
 
-# DEBUG: False en Render, True en local si no existe la variable
-DEBUG = os.environ.get('DEBUG', 'False') == 'True'
+# SECURITY WARNING: don't run with debug turned on in production!
+DEBUG = True
 
-# ALLOWED_HOSTS: siempre funciona en Render y en local
-ALLOWED_HOSTS = ['localhost', '127.0.0.1', '.onrender.com']
+ALLOWED_HOSTS = ['localhost', '127.0.0.1', 'testserver']
 
-# Render agrega automáticamente su hostname
-if os.environ.get('RENDER'):
-    ALLOWED_HOSTS.append(os.environ.get('RENDER_EXTERNAL_HOSTNAME'))
+APPEND_SLASH = True
 
-# Seguridad adicional en producción
-if not DEBUG:
-    SECURE_SSL_REDIRECT = True
-    SESSION_COOKIE_SECURE = True
-    CSRF_COOKIE_SECURE = True
-    SECURE_BROWSER_XSS_FILTER = True
-    SECURE_CONTENT_TYPE_NOSNIFF = True
-    X_FRAME_OPTIONS = 'DENY'
-
-# =============================================================================
-# APPLICATIONS
-# =============================================================================
+# Application definition
 INSTALLED_APPS = [
     'django.contrib.admin',
     'django.contrib.auth',
@@ -41,20 +27,16 @@ INSTALLED_APPS = [
     'django.contrib.sessions',
     'django.contrib.messages',
     'django.contrib.staticfiles',
-
     'cloudinary_storage',
-    'cloudinary',
+    'cloudinary',          
     'core',
     'rest_framework',
-    'django.contrib.humanize',
+    'django.contrib.humanize', # Importante para los precios
 ]
 
-# =============================================================================
-# MIDDLEWARE (WhiteNoise justo después de SecurityMiddleware)
-# =============================================================================
 MIDDLEWARE = [
     'django.middleware.security.SecurityMiddleware',
-    'whitenoise.middleware.WhiteNoiseMiddleware',   # ← crucial aquí
+    'whitenoise.middleware.WhiteNoiseMiddleware',   
     'django.contrib.sessions.middleware.SessionMiddleware',
     'django.middleware.common.CommonMiddleware',
     'django.middleware.csrf.CsrfViewMiddleware',
@@ -65,13 +47,10 @@ MIDDLEWARE = [
 
 ROOT_URLCONF = 'distribuidora.urls'
 
-# =============================================================================
-# TEMPLATES
-# =============================================================================
 TEMPLATES = [
     {
         'BACKEND': 'django.template.backends.django.DjangoTemplates',
-        'DIRS': [BASE_DIR / 'templates'],
+        'DIRS': [os.path.join(BASE_DIR, 'templates')],
         'APP_DIRS': True,
         'OPTIONS': {
             'context_processors': [
@@ -86,15 +65,16 @@ TEMPLATES = [
 
 WSGI_APPLICATION = 'distribuidora.wsgi.application'
 
-# =============================================================================
-# BASE DE DATOS
-# =============================================================================
+
+# Database
 DATABASE_URL = os.environ.get('DATABASE_URL')
+
 if DATABASE_URL:
     DATABASES = {
         'default': dj_database_url.parse(DATABASE_URL, conn_max_age=600)
     }
 else:
+    # Local con SQLite (exactamente igual que tenías antes)
     DATABASES = {
         'default': {
             'ENGINE': 'django.db.backends.sqlite3',
@@ -102,36 +82,50 @@ else:
         }
     }
 
-# =============================================================================
-# PASSWORD VALIDATION + IDIOMA CHILE
-# =============================================================================
+
+# Password validation
 AUTH_PASSWORD_VALIDATORS = [
-    {'NAME': 'django.contrib.auth.password_validation.UserAttributeSimilarityValidator'},
-    {'NAME': 'django.contrib.auth.password_validation.MinimumLengthValidator'},
-    {'NAME': 'django.contrib.auth.password_validation.CommonPasswordValidator'},
-    {'NAME': 'django.contrib.auth.password_validation.NumericPasswordValidator'},
+    {
+        'NAME': 'django.contrib.auth.password_validation.UserAttributeSimilarityValidator',
+    },
+    {
+        'NAME': 'django.contrib.auth.password_validation.MinimumLengthValidator',
+    },
+    {
+        'NAME': 'django.contrib.auth.password_validation.CommonPasswordValidator',
+    },
+    {
+        'NAME': 'django.contrib.auth.password_validation.NumericPasswordValidator',
+    },
 ]
 
-LANGUAGE_CODE = 'es-cl'
-TIME_ZONE = 'America/Santiago'
+
+# =================================================
+# CONFIGURACIÓN DE IDIOMA Y FORMATO DE PRECIOS
+# =================================================
+
+LANGUAGE_CODE = 'es-cl' # Español Chile
+
+TIME_ZONE = 'America/Santiago' # Hora de Chile
+
 USE_I18N = True
+
 USE_TZ = True
+
+# ESTO ES LO QUE HACE QUE SALGA $10.000 (Puntos en miles)
 USE_L10N = True
 USE_THOUSAND_SEPARATOR = True
 THOUSAND_SEPARATOR = '.'
 DECIMAL_SEPARATOR = ','
 NUMBER_GROUPING = 3
 
-# =============================================================================
-# STATIC + MEDIA (esto es lo que arregla el favicon de una vez por todas)
-# =============================================================================
+
+# Static files (CSS, JavaScript, Images)
 STATIC_URL = '/static/'
-STATICFILES_DIRS = [BASE_DIR / 'static']
-STATIC_ROOT = BASE_DIR / 'staticfiles'
-STATICFILES_STORAGE = 'whitenoise.storage.CompressedManifestStaticFilesStorage'  # ← clave
+STATICFILES_DIRS = [BASE_DIR / 'static']           # carpeta donde va el CSS/JS/imágenes
+STATIC_ROOT = BASE_DIR / 'staticfiles'             # donde collectstatic los copia
 
 MEDIA_URL = '/media/'
-
 STORAGES = {
     "default": {
         "BACKEND": "cloudinary_storage.storage.MediaCloudinaryStorage",
@@ -147,21 +141,23 @@ CLOUDINARY_STORAGE = {
     'API_SECRET': os.environ.get('CLOUDINARY_API_SECRET'),
 }
 
-# =============================================================================
-# EMAIL
-# =============================================================================
+# Default primary key field type
+DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
+
+# Validación Correo
 EMAIL_BACKEND = 'django.core.mail.backends.smtp.EmailBackend'
 EMAIL_HOST = 'smtp.gmail.com'
 EMAIL_PORT = 587
 EMAIL_USE_TLS = True
-EMAIL_HOST_USER = os.environ.get('EMAIL_HOST_USER', 'fabriicratos10@gmail.com')
-EMAIL_HOST_PASSWORD = os.environ.get('EMAIL_HOST_PASSWORD', 'ownr xwfg tkgh uqnl')
-DEFAULT_FROM_EMAIL = 'Distribuidora Talagante <no-reply@distribuidoratoralagante.cl>'
-SERVER_EMAIL = DEFAULT_FROM_EMAIL
+EMAIL_HOST_USER = 'fabriicratos10@gmail.com'
+EMAIL_HOST_PASSWORD = 'ownr xwfg tkgh uqnl'
+DEFAULT_FROM_EMAIL = 'Distribuidora Talagante <fabriicratos10@gmail.com>'
 
-# =============================================================================
-# MENSAJES
-# =============================================================================
+
+DEFAULT_FROM_EMAIL = 'Distribuidora Talagante <no-reply@distribuidoratoralagante.cl>'
+SERVER_EMAIL = 'Distribuidora Talagante <no-reply@distribuidoratoralagante.cl>'
+
+# Configuración de Mensajes (Alertas)
 MESSAGE_TAGS = {
     messages.DEBUG: 'debug',
     messages.INFO: 'info',
@@ -170,5 +166,12 @@ MESSAGE_TAGS = {
     messages.ERROR: 'danger',
 }
 
-DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
-APPEND_SLASH = True
+# ---------- SEGURIDAD Y HOSTS ----------
+DEBUG = os.environ.get('DEBUG', 'False') == 'True'
+ALLOWED_HOSTS = os.environ.get('ALLOWED_HOSTS', 'localhost,127.0.0.1').split(',')
+
+# Si estás en Render, agrega automáticamente el host dinámico
+if 'RENDER' in os.environ:
+    ALLOWED_HOSTS.append(os.environ.get('RENDER_EXTERNAL_HOSTNAME'))
+    
+
