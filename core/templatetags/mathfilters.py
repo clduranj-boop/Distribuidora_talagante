@@ -17,3 +17,12 @@ def sub(value, arg):
         return float(value) - float(arg)
     except (ValueError, TypeError):
         return value
+
+# === NUEVO FILTRO PARA SUMAR ATRIBUTO DE UN QUERSET ===
+@register.filter
+def sum_attribute(queryset, attribute):
+    """Suma el valor de un atributo en un queryset"""
+    try:
+        return sum(getattr(obj, attribute) or 0 for obj in queryset)
+    except:
+        return 0
