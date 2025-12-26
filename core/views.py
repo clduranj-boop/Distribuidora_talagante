@@ -1287,6 +1287,7 @@ from django.contrib import messages
 from .models import Orden
 from django.core.mail import send_mail
 from django.conf import settings
+from openpyxl.styles import Font, Alignment, PatternFill
 
 def is_superuser(user):
     return user.is_superuser
@@ -1305,6 +1306,8 @@ def test_correo(request):
     except Exception as e:
         return HttpResponse(f"<h1>ERROR: {e}</h1>")
     
+from openpyxl.utils import get_column_letter
+from openpyxl import Workbook
 
 @login_required
 @user_passes_test(lambda u: u.is_superuser)
@@ -1312,12 +1315,11 @@ def gestion_estados(request):
     busqueda = request.GET.get('q', '').strip()
     estado_filtro = request.GET.get('estado', '')
 
-    # 1. Obtener todas las órdenes ordenadas
-    ordenes = Orden.objects.select_related('usuario', 'usuario__perfil') \
+    # 1. Órdenes para la tabla principal
+    ordenes = Orden.objects.select_related('usuario', 'usuario__perfil', 'direccion_envio') \
                            .prefetch_related('itemorden_set__producto') \
                            .order_by('-fecha')
 
-    # 2. Aplicar Filtros (Búsqueda y Estado)
     if busqueda:
         ordenes = ordenes.filter(
             Q(id__icontains=busqueda) |
@@ -1329,32 +1331,32 @@ def gestion_estados(request):
     if estado_filtro:
         ordenes = ordenes.filter(estado=estado_filtro)
 
-    # 3. Logica POST (Cambio de estado rápido)
+    # 2. Cambio de estado (POST)
     if request.method == 'POST':
         orden_id = request.POST.get('orden_id')
         nuevo_estado = request.POST.get('estado')
-
         try:
             orden = Orden.objects.get(id=orden_id)
             estado_anterior = orden.get_estado_display()
             orden.estado = nuevo_estado
             orden.save()
 
-            # Mensaje de WhatsApp y Correo 
+            # WhatsApp link
             mensaje_wa = f"Hola! Mi pedido es el #{orden.id} - Estado: {orden.get_estado_display()}"
             whatsapp_link = f"https://wa.me/56949071013?text={urllib.parse.quote(mensaje_wa)}"
 
+            # Correo al cliente
             if orden.usuario.email:
                 try:
                     html_email = render_to_string('emails/cambio_estado.html', {
-                        'cliente': orden.usuario.perfil.nombre_completo or orden.usuario.username,
+                        'cliente': orden.usuario.perfil.nombre_completo() if hasattr(orden.usuario, 'perfil') else orden.usuario.username,
                         'pedido_id': orden.id,
                         'estado_anterior': estado_anterior,
                         'nuevo_estado': orden.get_estado_display(),
                         'total': orden.total,
                         'whatsapp_link': whatsapp_link,
+                        'items': orden.itemorden_set.all(),
                     })
-
                     email = EmailMultiAlternatives(
                         subject=f"¡Tu pedido #{orden.id} ha cambiado de estado!",
                         body="Tu pedido ha cambiado de estado.",
@@ -1364,25 +1366,112 @@ def gestion_estados(request):
                     email.attach_alternative(html_email, "text/html")
                     email.send()
                 except Exception as e:
-                    print(f"ERROR CORREO: {e}")
+                    print(f"ERROR ENVÍO CORREO: {e}")
 
             return JsonResponse({'success': True, 'nuevo_estado': orden.get_estado_display()})
-
         except Exception as e:
-            print(f"ERROR GENERAL: {e}")
+            print(f"ERROR CAMBIO ESTADO: {e}")
             return JsonResponse({'success': False})
 
-    # --- 4. PAGINACIÓN (AQUÍ ESTÁ EL CAMBIO) ---
-    # Esto divide la lista 'ordenes' en páginas de 20 elementos
-    paginator = Paginator(ordenes, 20) 
+    # 3. Paginación
+    paginator = Paginator(ordenes, 20)
     page_number = request.GET.get('page')
     page_obj = paginator.get_page(page_number)
 
+    # 4. VENTAS DIARIAS DETALLADAS (últimos 30 días)
+    todas_ordenes = Orden.objects.all().order_by('-fecha')
+    ventas_por_dia = {}
+    for orden in todas_ordenes:
+        dia = orden.fecha.date()
+        ventas_por_dia.setdefault(dia, []).append(orden)
+
+    dias_ordenados = sorted(ventas_por_dia.keys(), reverse=True)[:30]
+    ventas_diarias_agrupadas = [(dia, ventas_por_dia[dia]) for dia in dias_ordenados]
+
+    # 5. RESUMEN MENSUAL (últimos 12 meses)
+    ventas_mensuales = todas_ordenes.extra({
+        'mes': "strftime('%%m', fecha)",
+        'año': "strftime('%%Y', fecha)"
+    }).values('mes', 'año').annotate(
+        total_ventas=Sum('total'),
+        num_pedidos=Count('id')
+    ).order_by('-año', '-mes')[:12]
+
+    meses_nombres = {
+        '01': 'Enero', '02': 'Febrero', '03': 'Marzo', '04': 'Abril',
+        '05': 'Mayo', '06': 'Junio', '07': 'Julio', '08': 'Agosto',
+        '09': 'Septiembre', '10': 'Octubre', '11': 'Noviembre', '12': 'Diciembre'
+    }
+    for item in ventas_mensuales:
+        item['nombre_mes'] = meses_nombres.get(item['mes'], item['mes'])
+
+    # 6. EXPORTAR A EXCEL
+    if request.GET.get('export') == 'excel':
+        wb = Workbook()
+        ws = wb.active
+        ws.title = "Reporte Ventas"
+
+        header_font = Font(bold=True, color="FFFFFF")
+        header_fill = PatternFill(start_color="748C28", end_color="748C28", fill_type="solid")
+        title_font = Font(size=16, bold=True)
+        align_center = Alignment(horizontal="center")
+
+        ws['A1'] = "REPORTE DE VENTAS - DISTRIBUIDORA TALAGANTE"
+        ws.merge_cells('A1:E1')
+        ws['A1'].font = title_font
+        ws['A1'].alignment = align_center
+
+        row = 3
+        ws.cell(row=row, column=1, value="Ventas Diarias (Últimos 30 días)").font = Font(bold=True, size=14)
+        row += 2
+
+        headers = ["Fecha", "ID Pedido", "Cliente", "Total", "Estado"]
+        for col, h in enumerate(headers, 1):
+            cell = ws.cell(row=row, column=col, value=h)
+            cell.font = header_font
+            cell.fill = header_fill
+            cell.alignment = align_center
+
+        row += 1
+        for dia, ordenes_dia in ventas_diarias_agrupadas:
+            total_dia = sum(o.total for o in ordenes_dia)
+            ws.cell(row=row, column=1, value=dia.strftime("%d/%m/%Y")).font = Font(bold=True)
+            row += 1
+            for o in ordenes_dia:
+                ws.append(["", f"#{o.id}", o.usuario.username, o.total, o.get_estado_display()])
+            ws.cell(row=row, column=3, value="Total del día:").font = Font(bold=True)
+            ws.cell(row=row, column=4, value=total_dia).font = Font(bold=True, color="008000")
+            row += 2
+
+        row += 2
+        ws.cell(row=row, column=1, value="Resumen Mensual").font = Font(bold=True, size=14)
+        row += 2
+
+        headers_mes = ["Mes", "N° Pedidos", "Total Ventas"]
+        for col, h in enumerate(headers_mes, 1):
+            cell = ws.cell(row=row, column=col, value=h)
+            cell.font = header_font
+            cell.fill = header_fill
+
+        row += 1
+        for mes in ventas_mensuales:
+            ws.append([f"{mes['nombre_mes']} {mes['año']}", mes['num_pedidos'], mes['total_ventas']])
+
+        for col in range(1, 6):
+            ws.column_dimensions[get_column_letter(col)].width = 22
+
+        response = HttpResponse(content_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
+        response['Content-Disposition'] = 'attachment; filename=reporte_ventas_distribuidora_talagante.xlsx'
+        wb.save(response)
+        return response
+
     context = {
-        'ordenes': page_obj,  # Pasamos el objeto paginado, no la lista completa
+        'ordenes': page_obj,
         'busqueda': busqueda,
         'estado_filtro': estado_filtro,
         'estados_choices': Orden.ESTADOS,
+        'ventas_diarias_agrupadas': ventas_diarias_agrupadas,
+        'ventas_mensuales': ventas_mensuales,
     }
     return render(request, 'core/gestion_estados.html', context)
 
